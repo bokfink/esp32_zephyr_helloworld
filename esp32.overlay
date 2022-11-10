@@ -1,17 +1,29 @@
 / {
-  leds {
-    compatible = "gpio-leds";
-    blinking_led: blinking_led {
-      gpios = <&gpio0 25 GPIO_ACTIVE_HIGH>;
-    };
-  };
-
-  buttons {
-    compatible = "gpio-keys";
-    button: button {
-      gpios = <&gpio0 13 GPIO_ACTIVE_HIGH>;
-    };
-  };
+	pwmleds {
+		compatible = "pwm-leds";
+		fading_led: fading_led {
+			    pwms = <&ledc0 0 10000 PWM_POLARITY_NORMAL>;
+		};
+	};
 };
-      
-      
+
+&pinctrl {
+        ledc0_default: ledc0_default {
+	        group1 {
+		        pinmux = <LEDC_CH0_GPIO25>;
+			output-enable;
+		};
+	};
+};
+
+&ledc0 {
+        pinctrl-0 = <&ledc0_default>;
+	pinctrl-names = "default";
+        status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	channel0@0 {
+	        reg = <0x0>;
+		timer = <0>;
+	};
+};

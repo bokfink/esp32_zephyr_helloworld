@@ -1,53 +1,55 @@
 #include <zephyr/device.h>
-#include <zephyr/drivers/gpio.h>
-#include <zephyr/kernel.h>
+#include <zephyr/drivers/pwm.h>
 
-static struct gpio_callback button_cb_data;
+#define NUM_STEPS 100U
+#define SLEEP_DELTA_MSEC 20U
 
-static const struct gpio_dt_spec led =
-  GPIO_DT_SPEC_GET(DT_NODELABEL(blinking_led), gpios);
-static const struct gpio_dt_spec button =
-  GPIO_DT_SPEC_GET(DT_NODELABEL(button), gpios);
+static const struct pwm_dt_spec fading_led =
+  PWM_DT_SPEC_GET(DT_NODELABEL(fading_led));
 
-void button_pressed(const struct device *dev,
-		    struct gpio_callback *cb,
-		    uint32_t pins)
+static uint32_t pulse_width_nsec = 0U;
+static uint32_t pulse_width_delta_nsec = 0U;
+static uint32_t steps_taken = 0U;
+static bool increasing_intensity = true;
+int ret;
+
+void led_delta_timer_handler(struct k_timer *timer_info)
 {
-  int ret;
-  ret = gpio_pin_toggle_dt(&led);
-  if (ret != 0) {
-    printk("Could not toggle LED\n");
+  if (increasing_intensity) {
+    if (steps_taken < NUM_STEPS) {
+      ret = pwm_set_pulse_dt(&fading_led, pulse_width_nsec);
+      steps_taken++;
+      pulse_width_nsec += pulse_width_delta_nsec;
+    } else {
+      increasing_intensity = false;
+      steps_taken--;
+      pulse_width_nsec -= pulse_width_delta_nsec;
+    }
+  } else {
+    if (steps_taken > 0) {
+      ret = pwm_set_pulse_dt(&fading_led, pulse_width_nsec);
+      steps_taken--;
+      pulse_width_nsec -= pulse_width_delta_nsec;
+    } else {
+      increasing_intensity = true;
+      steps_taken++;
+      pulse_width_nsec += pulse_width_delta_nsec;
+    }
   }
 }
 
+K_TIMER_DEFINE(led_delta_timer, led_delta_timer_handler, NULL);
+
 void main(void)
 {
-  if (!device_is_ready(led.port)) {
+  if (!device_is_ready(fading_led.dev)) {
+    printk("Error: PWM device %s is not ready\n",
+	   fading_led.dev->name);
     return;
   }
 
-  if (!device_is_ready(button.port)) {
-    return;
-  }
+  pulse_width_delta_nsec = fading_led.period / NUM_STEPS;
   
-  int ret;
-  ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
-  if (ret != 0) {
-    return;
-  }
-
-  ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
-  if (ret != 0) {
-    return;
-  }
-
-  ret = gpio_pin_interrupt_configure_dt(&button,
-					GPIO_INT_EDGE_TO_ACTIVE);
-  if (ret != 0) {
-    return;
-  }
-
-  gpio_init_callback(&button_cb_data, button_pressed,
-		     BIT(button.pin));
-  gpio_add_callback(button.port, &button_cb_data);
+  k_timer_start(&led_delta_timer, K_MSEC(SLEEP_DELTA_MSEC),
+		K_MSEC(SLEEP_DELTA_MSEC));
 }
